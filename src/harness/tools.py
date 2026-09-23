@@ -1,3 +1,4 @@
+import asyncio
 import python_weather
 import inspect
 import ast
@@ -6,6 +7,8 @@ import io
 import traceback
 import linecache
 from llama_index.core.tools import FunctionTool
+from harness import clip
+from ddgs import DDGS
 
 def list_tools() -> list[FunctionTool]:
     """
@@ -19,6 +22,26 @@ def list_tools() -> list[FunctionTool]:
     for name, tool in TOOLS_data.items()
     ]
 
+async def search_web(query: str) -> str:
+    """Searches the web for a query and returns the top results (title, URL, snippet)."""
+    try:
+        results = await asyncio.wait_for(
+            asyncio.to_thread(DDGS().text, query, max_results=5),
+            timeout=20,
+        )
+    except asyncio.TimeoutError:
+        return "Search timed out after 20 seconds."
+    except Exception as e:
+        return f"Search failed: {type(e).__name__}: {e}"
+
+    if not results:
+        return "No results found."
+
+    return "\n\n".join(
+        f"{i}. {r['title']}\n   {r['href']}\n   {r['body']}"
+        for i, r in enumerate(results, 1)
+    )
+
 
 async def get_weather(city: str) -> float:
     """
@@ -31,7 +54,7 @@ async def get_weather(city: str) -> float:
         float: The current temperature in Fahrenheit.
     """
     async with python_weather.Client(unit=python_weather.IMPERIAL) as client:
-        weather = await client.get(city)
+        weather = await asyncio.wait_for(client.get(city), timeout=20)
         return weather.temperature
 
 
@@ -56,18 +79,52 @@ def run_code(code: str) -> str:
             output += repr(result)
         return output or "(no output)"
 
-    except Exception as e:
-        if isinstance(e, SyntaxError):
-            trace = "".join(traceback.format_exception_only(type(e), e))
-        else:
-            tb = e.__traceback__.tb_next or e.__traceback__
-            trace = "".join(traceback.format_exception(type(e), e, tb))
-
+    except Exception:
+        trace = traceback.format_exc()
+        trace = clip(trace)
         partial = buf.getvalue()
         msg = f"Execution failed:\n{trace}"
         if partial:
             msg = f"Output before the error:\n{partial}\n{msg}"
         return msg
+
+async def run_bash(command: str) -> str:
+    """Executes the provided bash command and returns its exit code, stdout and stderr."""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "bash", "-c", command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+    except OSError as e:
+        return f"Could not start the command: {e}"
+
+    try:
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60)
+    except asyncio.TimeoutError:
+        proc.kill()
+        await proc.wait()
+        return "Command timed out after 60 seconds."
+
+    out = stdout.decode("utf-8", errors="replace").strip()
+    err = stderr.decode("utf-8", errors="replace").strip()
+
+    parts = [f"Exit code: {proc.returncode}"]
+    if out:
+        parts.append(f"stdout:\n{clip(out)}")
+    if err:
+        parts.append(f"stderr:\n{clip(err)}")
+    if not out and not err:
+        parts.append("(no output)")
+    return "\n".join(parts)
+
+def get_file_content(file_path: str) -> str:
+    """Opens a file and returns its content."""
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            return f.read()
+    except Exception as e:
+        return f"Error opening file: {e}"
 
 TOOLS_data = {
     "get_weather": {
@@ -90,6 +147,39 @@ TOOLS_data = {
             }
         },
         "fn": run_code
+    },
+
+    "run_bash": {
+        "description": "Executes the provided bash command and returns the result.",
+        "args": {
+            "command": {
+                "type": "string",
+                "description": "The bash command to execute."
+            }
+        },
+        "fn": run_bash
+    },
+
+    "get_file_content": {
+        "description": "Opens a file and returns its content.",
+        "args": {
+            "file_path": {
+                "type": "string",
+                "description": "The path to the file to open."
+            }
+        },
+        "fn": get_file_content
+    },
+
+    "search_web": {
+        "description": "Searches the web for a query and returns the top results (title, URL, snippet).",
+        "args": {
+            "query": {
+                "type": "string",
+                "description": "The search query."
+            }
+        },
+        "fn": search_web
     }
 }
 

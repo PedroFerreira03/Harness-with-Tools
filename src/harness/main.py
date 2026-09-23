@@ -9,11 +9,12 @@ async def main():
         llm = initialize_model()
         tools = list_tools()
 
+        system_message = """You are a helpful assistant that can use tools to answer questions. 
+        You have access to tools. After every tool result, you should think about its result and plan the steps ahead before continuing on."""
+
         query = str(input("\n> Enter your query (or 'exit' to quit): "))
         if query.lower() == "exit":
             break
-
-        system_message = "You are a helpful assistant that can use tools to answer questions. You have access to tools. After every tool result, you should think about the result and plan the steps ahead before answering."
 
         chat_history = [ChatMessage(role='system', content=system_message), ChatMessage(role="user", content=query)]
 
@@ -61,7 +62,6 @@ async def main():
                         additional_kwargs={"tool_call_id": tool_call.tool_id},
                     )
                 )
-
 
 if __name__ == "__main__":
     asyncio.run(main())

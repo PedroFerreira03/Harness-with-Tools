@@ -8,6 +8,7 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
+    "ddgs>=9.16.0",
     "llama-index>=0.14.24",
     "llama-index-llms-ollama>=0.10.1",
     "python-weather>=2.2.3",
