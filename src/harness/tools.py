@@ -1,5 +1,10 @@
 import python_weather
 import inspect
+import ast
+import contextlib
+import io
+import traceback
+import linecache
 from llama_index.core.tools import FunctionTool
 
 def list_tools() -> list[FunctionTool]:
@@ -29,23 +34,44 @@ async def get_weather(city: str) -> float:
         weather = await client.get(city)
         return weather.temperature
 
-def add(x: float, y: float) -> float:
-    """
-    Adds two numbers.
 
-    Args:
-        x (float): The first number.
-        y (float): The second number.
+def run_code(code: str) -> str:
+    """Executes the provided code and returns the result."""
+    buf = io.StringIO()
+    linecache.cache["<llm>"] = (len(code), None, code.splitlines(True), "<llm>")
 
-    Returns:
-        float: The sum of x and y.
-    """
-    return x + y
+    try:
+        tree = ast.parse(code)
+        last_expr = None
+        if tree.body and isinstance(tree.body[-1], ast.Expr):
+            last_expr = ast.Expression(tree.body.pop().value)
 
+        env = {}
+        with contextlib.redirect_stdout(buf):
+            exec(compile(tree, "<llm>", "exec"), env)
+            result = eval(compile(last_expr, "<llm>", "eval"), env) if last_expr else None
+
+        output = buf.getvalue()
+        if result is not None:
+            output += repr(result)
+        return output or "(no output)"
+
+    except Exception as e:
+        if isinstance(e, SyntaxError):
+            trace = "".join(traceback.format_exception_only(type(e), e))
+        else:
+            tb = e.__traceback__.tb_next or e.__traceback__
+            trace = "".join(traceback.format_exception(type(e), e, tb))
+
+        partial = buf.getvalue()
+        msg = f"Execution failed:\n{trace}"
+        if partial:
+            msg = f"Output before the error:\n{partial}\n{msg}"
+        return msg
 
 TOOLS_data = {
     "get_weather": {
-        "description": "Fetches the current temperature for a given city.",
+        "description": "Fetches the current temperature for a given city, in Fahrenheit.",
         "args": {
             "city": {
                 "type": "string",
@@ -55,19 +81,15 @@ TOOLS_data = {
         "fn": get_weather
     },
 
-    "add": {
-        "description": "Adds two numbers.",
+    "run_code": {
+        "description": "Executes the provided code as a string and returns the result.",
         "args": {
-            "x": {
-                "type": "number",
-                "description": "The first number."
-            },
-            "y": {
-                "type": "number",
-                "description": "The second number."
+            "code": {
+                "type": "string",
+                "description": "The code to execute."
             }
         },
-        "fn": add
+        "fn": run_code
     }
 }
 

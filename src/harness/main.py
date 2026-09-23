@@ -1,9 +1,7 @@
 import asyncio
-from llama_index.core.tools import FunctionTool
 from llama_index.core.llms import ChatMessage, MessageRole
-from llama_index.llms.ollama import Ollama
-from mcp_implementation.tools import list_tools, execute_tool
-from mcp_implementation.llm import initialize_model
+from harness.tools import list_tools, execute_tool
+from harness.llm import initialize_model
 
 
 async def main():
@@ -15,7 +13,9 @@ async def main():
         if query.lower() == "exit":
             break
 
-        chat_history = [ChatMessage(role="user", content=query)]
+        system_message = "You are a helpful assistant that can use tools to answer questions. You have access to tools. After every tool result, you should think about the result and plan the steps ahead before answering."
+
+        chat_history = [ChatMessage(role='system', content=system_message), ChatMessage(role="user", content=query)]
 
         while True:
             print("\n[Assistant]")
@@ -44,12 +44,14 @@ async def main():
                         continue
 
             for tc in tool_calls:
-                print(f"\n[Tool Call] {tc.tool_name}({tc.tool_kwargs})")
+                print(f"[Tool Call] {tc.tool_name}({tc.tool_kwargs})")
 
             results = await asyncio.gather(
                 *(execute_tool(tool_name=tc.tool_name, tool_args=tc.tool_kwargs) for tc in tool_calls)
             )
 
+
+            print("")
             for tool_call, result in zip(tool_calls, results):
                 print(f"[Tool Result] {tool_call.tool_name} -> {result}")
                 chat_history.append(
@@ -63,3 +65,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+    

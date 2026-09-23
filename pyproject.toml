@@ -1,5 +1,5 @@
 [project]
-name = "mcp-implementation"
+name = "harness"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -11,10 +11,11 @@ dependencies = [
     "llama-index>=0.14.24",
     "llama-index-llms-ollama>=0.10.1",
     "python-weather>=2.2.3",
+    "torch>=2.14.0",
 ]
 
 [project.scripts]
-mcp-implementation = "mcp_implementation:main"
+harness = "harness:main"
 
 [build-system]
 requires = ["uv_build>=0.12.7,<0.13.0"]
