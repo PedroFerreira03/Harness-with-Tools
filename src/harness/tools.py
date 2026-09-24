@@ -1,13 +1,9 @@
 import asyncio
 import python_weather
 import inspect
-import ast
-import contextlib
-import io
-import traceback
-import linecache
+import sys
 from llama_index.core.tools import FunctionTool
-from harness import clip
+from harness import run_process
 from ddgs import DDGS
 
 def list_tools() -> list[FunctionTool]:
@@ -46,77 +42,36 @@ async def search_web(query: str) -> str:
 async def get_weather(city: str) -> float:
     """
     Fetches the current temperature for a given city.
-
-    Args:
-        city (str): The name of the city.
-
-    Returns:
-        float: The current temperature in Fahrenheit.
     """
     async with python_weather.Client(unit=python_weather.IMPERIAL) as client:
         weather = await asyncio.wait_for(client.get(city), timeout=20)
         return weather.temperature
 
-
-def run_code(code: str) -> str:
-    """Executes the provided code and returns the result."""
-    buf = io.StringIO()
-    linecache.cache["<llm>"] = (len(code), None, code.splitlines(True), "<llm>")
-
-    try:
-        tree = ast.parse(code)
-        last_expr = None
-        if tree.body and isinstance(tree.body[-1], ast.Expr):
-            last_expr = ast.Expression(tree.body.pop().value)
-
-        env = {}
-        with contextlib.redirect_stdout(buf):
-            exec(compile(tree, "<llm>", "exec"), env)
-            result = eval(compile(last_expr, "<llm>", "eval"), env) if last_expr else None
-
-        output = buf.getvalue()
-        if result is not None:
-            output += repr(result)
-        return output or "(no output)"
-
-    except Exception:
-        trace = traceback.format_exc()
-        trace = clip(trace)
-        partial = buf.getvalue()
-        msg = f"Execution failed:\n{trace}"
-        if partial:
-            msg = f"Output before the error:\n{partial}\n{msg}"
-        return msg
+async def run_code(code: str) -> str:
+    """Executes the provided Python code and returns its exit code, stdout and stderr. Use print() to see values."""
+    return await run_process([sys.executable, "-I", "-"], stdin=code)
 
 async def run_bash(command: str) -> str:
     """Executes the provided bash command and returns its exit code, stdout and stderr."""
+    return await run_process(["bash", "-c", command])
+
+def edit_file(file_path: str, old_str: str, new_str: str) -> str:
+    """Replaces one exact occurrence of old_str with new_str in a file."""
     try:
-        proc = await asyncio.create_subprocess_exec(
-            "bash", "-c", command,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-    except OSError as e:
-        return f"Could not start the command: {e}"
+        with open(file_path, "r", encoding="utf-8") as f:
+            content = f.read()
+    except Exception as e:
+        return f"Error opening file: {e}"
 
-    try:
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60)
-    except asyncio.TimeoutError:
-        proc.kill()
-        await proc.wait()
-        return "Command timed out after 60 seconds."
+    count = content.count(old_str)
+    if count == 0:
+        return "Edit failed: old_str not found. Re-read the file and try again."
+    if count > 1:
+        return f"Edit failed: old_str matches {count} places. Include more surrounding context to make it unique."
 
-    out = stdout.decode("utf-8", errors="replace").strip()
-    err = stderr.decode("utf-8", errors="replace").strip()
-
-    parts = [f"Exit code: {proc.returncode}"]
-    if out:
-        parts.append(f"stdout:\n{clip(out)}")
-    if err:
-        parts.append(f"stderr:\n{clip(err)}")
-    if not out and not err:
-        parts.append("(no output)")
-    return "\n".join(parts)
+    with open(file_path, "w", encoding="utf-8") as f:
+        f.write(content.replace(old_str, new_str, 1))
+    return "Edit applied."
 
 def get_file_content(file_path: str) -> str:
     """Opens a file and returns its content."""
@@ -139,7 +94,7 @@ TOOLS_data = {
     },
 
     "run_code": {
-        "description": "Executes the provided code as a string and returns the result.",
+        "description": "Executes the provided code as a string and returns the stdout and stderr. Use print() to see values.",
         "args": {
             "code": {
                 "type": "string",
@@ -150,7 +105,7 @@ TOOLS_data = {
     },
 
     "run_bash": {
-        "description": "Executes the provided bash command and returns the result.",
+        "description": "Executes the provided bash command and returns the exit code, stdout and stderr.",
         "args": {
             "command": {
                 "type": "string",
@@ -180,6 +135,25 @@ TOOLS_data = {
             }
         },
         "fn": search_web
+    },
+
+    "edit_file": {
+        "description": "Replaces one exact occurrence of old_str with new_str in a file",
+        "args": {
+            "file_path": {
+                "type": "string",
+                "description": "The path to the file to edit."
+            },
+            "old_str": {
+                "type": "string",
+                "description": "The string to be replaced."
+            },
+            "new_str": {
+                "type": "string",
+                "description": "The string to replace with."
+            }
+        },
+        "fn": edit_file
     }
 }
 

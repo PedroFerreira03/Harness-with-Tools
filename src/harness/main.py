@@ -12,7 +12,7 @@ async def main():
         system_message = """You are a helpful assistant that can use tools to answer questions. 
         You have access to tools. After every tool result, you should think about its result and plan the steps ahead before continuing on."""
 
-        query = str(input("\n> Enter your query (or 'exit' to quit): "))
+        query = str(input("\n> Enter your query (or 'exit' to quit): ")).strip()
         if query.lower() == "exit":
             break
 
@@ -33,7 +33,7 @@ async def main():
             chat_history.append(last_chunk.message)
 
             if not tool_calls:
-                decision = str(input("\n[System] What do you want to do? (new, continue, exit) "))
+                decision = str(input("\n[System] What do you want to do? (new, continue, exit) ")).strip()
                 match decision.lower():
                     case "exit":
                         return
