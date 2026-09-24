@@ -3,7 +3,7 @@ import python_weather
 import inspect
 import sys
 from llama_index.core.tools import FunctionTool
-from harness import run_process
+from harness import run_process, read_file
 from ddgs import DDGS
 
 def list_tools() -> list[FunctionTool]:
@@ -38,7 +38,6 @@ async def search_web(query: str) -> str:
         for i, r in enumerate(results, 1)
     )
 
-
 async def get_weather(city: str) -> float:
     """
     Fetches the current temperature for a given city.
@@ -55,11 +54,10 @@ async def run_bash(command: str) -> str:
     """Executes the provided bash command and returns its exit code, stdout and stderr."""
     return await run_process(["bash", "-c", command])
 
-def edit_file(file_path: str, old_str: str, new_str: str) -> str:
+async def edit_file(file_path: str, old_str: str, new_str: str) -> str:
     """Replaces one exact occurrence of old_str with new_str in a file."""
     try:
-        with open(file_path, "r", encoding="utf-8") as f:
-            content = f.read()
+        content = await asyncio.to_thread(read_file, file_path)
     except Exception as e:
         return f"Error opening file: {e}"
 
@@ -73,13 +71,9 @@ def edit_file(file_path: str, old_str: str, new_str: str) -> str:
         f.write(content.replace(old_str, new_str, 1))
     return "Edit applied."
 
-def get_file_content(file_path: str) -> str:
+async def get_file_content(file_path: str) -> str:
     """Opens a file and returns its content."""
-    try:
-        with open(file_path, "r", encoding="utf-8") as f:
-            return f.read()
-    except Exception as e:
-        return f"Error opening file: {e}"
+    return await asyncio.to_thread(read_file, file_path)
 
 TOOLS_data = {
     "get_weather": {

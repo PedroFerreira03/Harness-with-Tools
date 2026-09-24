@@ -37,3 +37,7 @@ async def run_process(args: list[str], stdin: str | None = None, timeout: int = 
     if not out and not err:
         parts.append("(no output)")
     return "\n".join(parts)
+
+def read_file(file_path: str) -> str:
+    with open(file_path, "r", encoding="utf-8") as f:
+        return f.read()

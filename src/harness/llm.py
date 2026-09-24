@@ -8,5 +8,5 @@ def initialize_model() -> Ollama:
         Ollama: An instance of the Ollama model.
     """
     return Ollama(model="qwen3:8b",
-                context_window=16384,
+                context_window=8000,
                 request_timeout=300)
